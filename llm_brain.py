@@ -182,30 +182,27 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None,
     }
     
     # Model Configs
-    # Note: Model names here are for DIRECT API calls (not OpenRouter)
-    # OpenRouter uses vendor prefixes (google/, anthropic/), but direct APIs don't
-    gemini_flash_lite_config = {"model": "gemini-2.0-flash"}
-    gemini_fast_config = {"model": "gemini-2.0-flash-exp"}  # Fast experimental flash
-    gemini_3_pro_config = {"model": "gemini-3-pro-preview"}
-    claude_opus_46_config = {"model": "claude-opus-4.6"}
+    # Using stable, proven models that exist in Gemini v1beta API
+    gemini_flash_config = {"model": "gemini-2.0-flash-001"}  # Stable flash model
+    gemini_pro_config = {"model": "gemini-1.5-pro-002"}      # Stable pro model
+    claude_opus_46_config = {"model": "claude-opus-4.6"}     # If credits available
 
 
     if complexity == Complexity.HEARTBEAT:
         # Strategy: Cheapest only — minimize cost for proactive checks
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_lite_config))
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
 
     elif complexity == Complexity.SIMPLE:
-        # Strategy: Fast agentic model -> free fallback
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_fast_config))
+        # Strategy: Fast, reliable model -> free fallback
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
         
     else: # COMPLEX
-        # Strategy: Premium Gemini -> fallback (avoiding Claude due to low credits)
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_3_pro_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_fast_config))
+        # Strategy: Best available Gemini -> Flash fallback -> Free
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_pro_config))
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
-        # Claude removed from rotation due to low credit balance
 
     
     errors = []
