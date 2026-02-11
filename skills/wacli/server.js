@@ -105,11 +105,14 @@ async function processMessage(msg) {
         const senderName = msg.from;
         console.log(`[DEBUG] Calling API for ${senderName}...`);
 
-        const response = await axios.post(BRAIN_API_URL, {
+        const payload = {
             message: messageBody,
-            sender: senderName,
-            complexity: 'simple'
-        });
+            context: {
+                source: 'whatsapp',
+                from: msg.from
+            }
+        };
+        const response = await axios.post(BRAIN_API_URL, payload);
 
         console.log(`[DEBUG] API Response status: ${response.status}`);
 

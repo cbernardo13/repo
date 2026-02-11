@@ -68,7 +68,11 @@ async def on_message(message):
             # Prepare payload for OpenClaw
             payload = {
                 "message": message.content,
-                "sender": f"discord:{message.author.name}"
+                "context": {
+                    "source": "discord",
+                    "channel": message.channel.name,
+                    "author": message.author.name
+                }
             }
             
             # Call OpenClaw API (run in executor to avoid blocking event loop)

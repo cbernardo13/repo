@@ -25,6 +25,62 @@ class Complexity(Enum):
     COMPLEX = "complex"
     HEARTBEAT = "heartbeat"
 
+class CapabilityTier(Enum):
+    """7-tier capability router for specialized model routing."""
+    UTILITY = "utility"        # Background chores, heartbeats → Free
+    PERSONA = "persona"        # Conversational chat → Gemini 2.5 Flash Lite  
+    BRAIN = "brain"            # Agentic tasks, multimodal → Gemini 2.0 Flash
+    CODING = "coding"          # Software engineering → Grok via OpenRouter
+    APEX = "apex"              # Complex reasoning → Gemini 1.5 Pro
+    VISUALS = "visuals"        # Image generation → Imagen
+    VOICE = "voice"            # Audio responses → OpenAI Audio
+
+def classify_tier(prompt, context=None):
+    """
+    Classify message into capability tier for specialized routing.
+    
+    Args:
+        prompt: User message text
+        context: Optional dict with metadata (is_automated, source, etc.)
+    
+    Returns:
+        CapabilityTier
+    """
+    prompt_lower = prompt.lower()
+    context = context or {}
+    
+    # UTILITY: Background/automated tasks
+    if context.get("is_automated") or context.get("is_heartbeat"):
+        return CapabilityTier.UTILITY
+    
+    # UTILITY: Very short check-ins
+    if len(prompt) < 15 and any(w in prompt_lower for w in ["hi", "hey", "ping", "status", "hello"]):
+        return CapabilityTier.UTILITY
+    
+    # VISUALS: Image generation requests
+    visual_indicators = ["create image", "generate photo", "realistic photo", "draw", "make an image"]
+    if any(ind in prompt_lower for ind in visual_indicators):
+        return CapabilityTier.VISUALS
+    
+    # CODING: Software engineering
+    coding_indicators = ["debug", "code", "implement", "refactor", "fix bug", "git", "deploy", "api", "function", "class"]
+    if any(ind in prompt_lower for ind in coding_indicators):
+        return CapabilityTier.CODING
+    
+    # APEX: Complex reasoning (longer, analytical queries)
+    apex_indicators = ["analyze", "compare", "strategy", "evaluate options", "research", "investigate"]
+    if any(ind in prompt_lower for ind in apex_indicators) and len(prompt) > 100:
+        return CapabilityTier.APEX
+    
+    # BRAIN: Agentic/tool usage (calendar, files, multimodal)
+    brain_indicators = ["calendar", "schedule", "appointment", "file", "folder", "photo", "image", "video", "busy", "free"]
+    if any(ind in prompt_lower for ind in brain_indicators):
+        return CapabilityTier.BRAIN
+    
+    # PERSONA: Default conversational tier
+    return CapabilityTier.PERSONA
+
+
 # --- Cost Rates (approximate per 1M tokens) ---
 # Format: model_name_fragment: (input_rate, output_rate)
 COST_RATES = {
@@ -117,7 +173,18 @@ def load_brain_context():
             
     return "\n".join(context_parts)
 
-def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None, channel="api"):
+def generate_text(prompt, tier=None, complexity=None, system_instruction=None, context=None, channel="api"):
+    """
+    Generate text using 7-tier capability router or legacy complexity routing.
+    
+    Args:
+        prompt: User message
+        tier: Optional CapabilityTier (auto-detected if None)
+        complexity: Legacy complexity parameter (deprecated, use tier instead)
+        system_instruction: Optional system override
+        context: Dict with metadata (is_automated, source, etc.)
+        channel: Source channel (api, whatsapp, discord)
+    """
     gemini_key = get_api_key("GEMINI_API_KEY")
     claude_key = get_api_key("ANTHROPIC_API_KEY")
     openrouter_key = get_api_key("OPENROUTER_API_KEY")
@@ -188,20 +255,50 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None,
     claude_opus_46_config = {"model": "claude-opus-4.6"}     # If credits available
 
 
-    if complexity == Complexity.HEARTBEAT:
-        # Strategy: Cheapest only — minimize cost for proactive checks
-        providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
 
-    elif complexity == Complexity.SIMPLE:
-        # Strategy: Fast, reliable model -> free fallback
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
-        providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
+    # Model Configs by Tier
+    tier_models = {
+        CapabilityTier.UTILITY: {
+            "provider": "openrouter",
+            "config": {"model": "openrouter/free", "site_url": "https://openclaw.ai", "app_name": "OpenClaw"}
+        },
+        CapabilityTier.PERSONA: {
+            "provider": "gemini",
+            "config": {"model": "gemini-2.5-flash-lite"}
+        },
+        CapabilityTier.BRAIN: {
+            "provider": "openrouter",
+            "config": {"model": "openrouter/xai/grok-4.1", "site_url": "https://openclaw.ai", "app_name": "OpenClaw"}
+        },
+        CapabilityTier.CODING: {
+            "provider": "openrouter",
+            "config": {"model": "openrouter/xai/grok-code-fast-1", "site_url": "https://openclaw.ai", "app_name": "OpenClaw"}
+        },
+        CapabilityTier.APEX: {
+            "provider": "gemini",
+            "config": {"model": "gemini-1.5-pro-002"}
+        },
+    }
+    
+    # Get provider config for this tier
+    tier_config = tier_models.get(tier)
+    if tier_config:
+        provider_name = tier_config["provider"]
+        model_config = tier_config["config"]
         
-    else: # COMPLEX
-        # Strategy: Best available Gemini -> Flash fallback -> Free
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_pro_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
+        # Add provider to list with fallbacks
+        if provider_name == "gemini":
+            providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, model_config))
+            # Fallback to free if Gemini fails
+            providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
+        elif provider_name == "openrouter":
+            providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, model_config))
+            # Fallback to Gemini Flash if OpenRouter fails
+            providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_config))
+    else:
+        # Unknown tier, use default (PERSONA)
+        logger.warning(f"Unknown tier {tier}, using PERSONA default")
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, {"model": "gemini-2.0-flash-001"}))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
 
     
