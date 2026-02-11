@@ -29,6 +29,8 @@ class Complexity(Enum):
 # Format: model_name_fragment: (input_rate, output_rate)
 COST_RATES = {
     "gemini-2.0-flash": (0.10, 0.40),
+    "gemini-2.5-flash-lite": (0.05, 0.20),
+    "gemini-3-flash-preview": (0.15, 0.60),
     "gemini-3-pro": (1.25, 5.00),
     "claude-3-opus": (15.0, 75.0),
     "claude-3-sonnet": (3.0, 15.0),
@@ -115,7 +117,7 @@ def load_brain_context():
             
     return "\n".join(context_parts)
 
-def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None, channel="unknown"):
+def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None, channel="api"):
     gemini_key = get_api_key("GEMINI_API_KEY")
     claude_key = get_api_key("ANTHROPIC_API_KEY")
     openrouter_key = get_api_key("OPENROUTER_API_KEY")
@@ -179,30 +181,28 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None,
         "app_name": "OpenClaw"
     }
     
-    # Direct Paid Models
-    gemini_paid_config = {"model": "gemini-2.0-flash"}
-    claude_paid_config = {"model": "claude-3-opus-20240229"}
-
-    # Premium Models (for complex tasks)
-    gemini_3_pro_config = {"model": "gemini-3-pro"}
-    claude_opus_46_config = {"model": "claude-opus-4.6"}
+    # Model Configs
+    gemini_flash_lite_config = {"model": "google/gemini-2.5-flash-lite"}
+    gemini_3_flash_preview_config = {"model": "google/gemini-3-flash-preview"}
+    gemini_3_pro_config = {"model": "google/gemini-3-pro"}
+    claude_opus_46_config = {"model": "anthropic/claude-opus-4.6"}
 
 
     if complexity == Complexity.HEARTBEAT:
-        # Strategy: Cheapest only — minimize cost
+        # Strategy: Cheapest only — minimize cost for proactive checks
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_flash_lite_config))
 
     elif complexity == Complexity.SIMPLE:
-        # Strategy: Free -> Cheap Paid -> Expensive Paid
+        # Strategy: Agentic tasks using Gemini 3 Flash Preview
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_3_flash_preview_config))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_paid_config))
-        providers.append(("claude", claude_key, ANTHROPIC_LIB_AVAILABLE, claude_paid_config))
         
     else: # COMPLEX
-        # Strategy: Premium -> Standard Paid -> Free fallback
+        # Strategy: Premium models for coding/complex tasks -> fallback
         providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_3_pro_config))
         providers.append(("claude", claude_key, ANTHROPIC_LIB_AVAILABLE, claude_opus_46_config))
-        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_paid_config))
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_3_flash_preview_config))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
 
     
@@ -262,7 +262,7 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None,
                         tokens_in=t_in,
                         tokens_out=t_out,
                         cost=cost,
-                        channel=channel or "unknown"
+                        channel=channel
                     )
                 except Exception as log_err:
                     logger.error(f"Traffic logging failed (non-blocking): {log_err}")
@@ -280,7 +280,7 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None,
                     latency=0,
                     status=f"error: {str(e)}",
                     cost=0,
-                    channel=channel or "unknown"
+                    channel=channel
                 )
 
             logger.error(f"{name} failed: {e}")
