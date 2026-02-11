@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""
+ClawBrain CLI - Unified command-line interface for Chris Bernardo's AI Assistant
+
+A custom AI assistant focused on business operations for CT Realty Media and R&B Apparel Plus.
+"""
+
+import sys
+import os
+import argparse
+import subprocess
+import json
+from datetime import datetime
+
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+VERSION = "1.0.0"
+BRAIN_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Try to import core modules (gracefully handle missing dependencies)
+try:
+    import llm_brain
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+
+try:
+    import scheduler
+    SCHEDULER_AVAILABLE = True
+except ImportError:
+    SCHEDULER_AVAILABLE = False
+
+try:
+    import calendar_sync
+    CALENDAR_AVAILABLE = True
+except ImportError:
+    CALENDAR_AVAILABLE = False
+
+try:
+    from core.tool_registry import create_default_registry
+    from core.memory_manager import MemoryManager
+    CORE_AVAILABLE = True
+except ImportError:
+    CORE_AVAILABLE = False
+
+
+def print_header(text):
+    """Print a formatted header"""
+    print(f"\n🧠 {text}")
+    print("=" * 60)
+
+
+def print_success(text):
+    """Print success message"""
+    print(f"✅ {text}")
+
+
+def print_error(text):
+    """Print error message"""
+    print(f"❌ {text}", file=sys.stderr)
+
+
+def print_info(text):
+    """Print info message"""
+    print(f"ℹ️  {text}")
+
+
+def cmd_version(args):
+    """Display version information"""
+    print_header("ClawBrain Version")
+    print(f"Version: {VERSION}")
+    print(f"Location: {BRAIN_DIR}")
+    print(f"Python: {sys.version.split()[0]}")
+    print(f"\nModules:")
+    print(f"  LLM Brain: {'✅' if LLM_AVAILABLE else '❌'}")
+    print(f"  Scheduler: {'✅' if SCHEDULER_AVAILABLE else '❌'}")
+    print(f"  Calendar: {'✅' if CALENDAR_AVAILABLE else '❌'}")
+    print(f"  Core Tools: {'✅' if CORE_AVAILABLE else '❌'}")
+
+
+def cmd_status(args):
+    """Check status of all ClawBrain services"""
+    print_header("ClawBrain Status")
+    
+    # Check WhatsApp Bot
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "messaging_service"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print_success("WhatsApp Bot: Running")
+        else:
+            print_error("WhatsApp Bot: Not running")
+    except Exception as e:
+        print_error(f"WhatsApp Bot: Error checking ({e})")
+    
+    # Check required files
+    required_files = [
+        "llm_brain.py",
+        "scheduler.py",
+        ".env",
+        "openclaw.json"
+    ]
+    
+    print("\nCore Files:")
+    for file in required_files:
+        path = os.path.join(BRAIN_DIR, file)
+        if os.path.exists(path):
+            print_success(f"{file}")
+        else:
+            print_error(f"{file} - Missing")
+    
+    # Check environment variables
+    print("\nEnvironment Variables:")
+    env_vars = ["GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"]
+    for var in env_vars:
+        if os.environ.get(var):
+            print_success(f"{var}: Set")
+        else:
+            print_info(f"{var}: Not set")
+
+
+def cmd_chat(args):
+    """Chat with ClawBrain"""
+    if not LLM_AVAILABLE:
+        print_error("LLM module not available")
+        return 1
+    
+    message = args.message
+    complexity = llm_brain.Complexity.COMPLEX if args.complex else llm_brain.Complexity.SIMPLE
+    
+    print_header("ClawBrain Chat")
+    print(f"You: {message}\n")
+    
+    try:
+        response = llm_brain.generate_text(message, complexity=complexity)
+        print(f"ClawBrain: {response}")
+        return 0
+    except Exception as e:
+        print_error(f"Chat failed: {e}")
+        return 1
+
+
+def cmd_schedule(args):
+    """Generate daily schedule"""
+    if not SCHEDULER_AVAILABLE:
+        print_error("Scheduler module not available")
+        return 1
+    
+    print_header("Generating Schedule")
+    
+    try:
+        keywords = scheduler.read_priorities()
+        tasks = scheduler.load_tasks(keywords)
+        schedule_content = scheduler.generate_schedule(tasks)
+        
+        print(schedule_content)
+        
+        # Save to file
+        output_file = os.path.join(BRAIN_DIR, "daily_schedule.md")
+        with open(output_file, 'w') as f:
+            f.write(schedule_content)
+        
+        print_success(f"\nSchedule saved to {output_file}")
+        return 0
+    except Exception as e:
+        print_error(f"Schedule generation failed: {e}")
+        return 1
+
+
+def cmd_deploy(args):
+    """Deploy to EC2"""
+    print_header("Deploying to EC2")
+    
+    sync_script = os.path.join(BRAIN_DIR, "sync_to_ec2.sh")
+    
+    if not os.path.exists(sync_script):
+        print_error(f"Deployment script not found: {sync_script}")
+        return 1
+    
+    try:
+        result = subprocess.run([sync_script], cwd=BRAIN_DIR)
+        return result.returncode
+    except Exception as e:
+        print_error(f"Deployment failed: {e}")
+        return 1
+
+
+def cmd_sync(args):
+    """Sync files to EC2 (alias for deploy)"""
+    return cmd_deploy(args)
+
+
+def cmd_calendar(args):
+    """Show calendar events"""
+    if not CALENDAR_AVAILABLE:
+        print_error("Calendar module not available")
+        return 1
+    
+    print_header("Calendar Events")
+    
+    try:
+        slots = calendar_sync.get_busy_slots()
+        
+        if not slots:
+            print_info("No upcoming events")
+            return 0
+        
+        for slot in slots:
+            start = slot['start'].strftime('%I:%M %p')
+            end = slot['end'].strftime('%I:%M %p')
+            print(f"📅 {start} - {end}: {slot['summary']}")
+        
+        return 0
+    except Exception as e:
+        print_error(f"Calendar fetch failed: {e}")
+        return 1
+
+
+def cmd_tools(args):
+    """List available tools"""
+    if not CORE_AVAILABLE:
+        print_error("Core modules not available")
+        return 1
+    
+    print_header("Available Tools")
+    
+    try:
+        registry = create_default_registry()
+        tools = registry.list_tools()
+        
+        for tool in tools:
+            print(f"🔧 {tool['name']}")
+            print(f"   {tool['description']}")
+        
+        return 0
+    except Exception as e:
+        print_error(f"Failed to list tools: {e}")
+        return 1
+
+
+def cmd_memory(args):
+    """View or search memory"""
+    if not CORE_AVAILABLE:
+        print_error("Core modules not available")
+        return 1
+    
+    print_header("Memory")
+    
+    try:
+        memory = MemoryManager()
+        
+        if args.search:
+            results = memory.search_memory(args.search)
+            if results:
+                for result in results:
+                    print(f"  {result}")
+            else:
+                print_info("No results found")
+        else:
+            context = memory.get_context()
+            print(f"User: {context.get('name', 'Unknown')}")
+            print(f"\nFacts ({len(context.get('facts', []))}):")
+            for fact in context.get('facts', [])[:10]:
+                print(f"  • {fact}")
+            
+            recent = memory.get_recent_interactions(5)
+            print(f"\nRecent Interactions ({len(recent)}):")
+            for interaction in recent:
+                print(f"  [{interaction['role']}] {interaction['content'][:80]}...")
+        
+        return 0
+    except Exception as e:
+        print_error(f"Memory access failed: {e}")
+        return 1
+
+
+def cmd_config(args):
+    """Display current configuration (sanitized)"""
+    print_header("Configuration")
+    
+    config_file = os.path.join(BRAIN_DIR, "openclaw.json")
+    
+    if not os.path.exists(config_file):
+        print_error("Config file not found")
+        return 1
+    
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        
+        # Sanitize: remove API keys
+        if 'env' in config:
+            sanitized_env = {}
+            for key in config['env']:
+                if 'KEY' in key or 'TOKEN' in key or 'SECRET' in key:
+                    sanitized_env[key] = "***REDACTED***"
+                else:
+                    sanitized_env[key] = config['env'][key]
+            config['env'] = sanitized_env
+        
+        print(json.dumps(config, indent=2))
+        return 0
+    except Exception as e:
+        print_error(f"Config read failed: {e}")
+        return 1
+
+
+
+def cmd_whatsapp(args):
+    """Manage WhatsApp via wacli"""
+    try:
+        from skills.wacli import wacli
+    except ImportError:
+        print_error("wacli skill not found in skills/wacli")
+        return 1
+
+    if args.subcommand == 'status':
+        print(wacli.check_status())
+    elif args.subcommand == 'send':
+        if not args.to or not args.message:
+            print_error("Both --to and --message are required for send")
+            return 1
+        print(wacli.send_message(args.to, args.message))
+    elif args.subcommand == 'history':
+        if not args.to:
+            print_error("--to is required for history")
+            return 1
+        history = wacli.get_history(args.to, args.limit)
+        try:
+            # Pretty print JSON if possible
+            parsed = json.loads(history)
+            print(json.dumps(parsed, indent=2))
+        except:
+            print(history)
+    elif args.subcommand == 'login':
+        # Run node cli.js login directly to see QR code interactively
+        try:
+            subprocess.run(["node", os.path.join(BRAIN_DIR, "skills/wacli/cli.js"), "login"], check=True)
+        except Exception as e:
+            print_error(f"Login failed: {e}")
+    else:
+        print_error(f"Unknown whatsapp subcommand: {args.subcommand}")
+        return 1
+    return 0
+
+def main():
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description="ClawBrain - Chris Bernardo's AI Assistant CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  clawbrain status              Check service health
+  clawbrain chat "Hello"        Chat with ClawBrain
+  clawbrain schedule            Generate today's schedule
+  clawbrain deploy              Deploy to EC2
+  clawbrain whatsapp status     Check WhatsApp connection
+  clawbrain whatsapp send --to 12345 --message "Hello"
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    
+    # Version
+    subparsers.add_parser('version', help='Show version information')
+    
+    # Status
+    subparsers.add_parser('status', help='Check service status')
+    
+    # Chat
+    chat_parser = subparsers.add_parser('chat', help='Chat with ClawBrain')
+    chat_parser.add_argument('message', help='Message to send')
+    chat_parser.add_argument('--complex', action='store_true', help='Use complex reasoning')
+    
+    # Schedule
+    subparsers.add_parser('schedule', help='Generate daily schedule')
+    
+    # Deploy
+    subparsers.add_parser('deploy', help='Deploy to EC2')
+    
+    # Sync
+    subparsers.add_parser('sync', help='Sync files to EC2 (alias for deploy)')
+    
+    # Calendar
+    calendar_parser = subparsers.add_parser('calendar', help='Show calendar events')
+    calendar_parser.add_argument('when', nargs='?', default='today', 
+                                 choices=['today', 'tomorrow'], 
+                                 help='Time range')
+    
+    # Tools
+    subparsers.add_parser('tools', help='List available tools')
+    
+    # Memory
+    memory_parser = subparsers.add_parser('memory', help='View or search memory')
+    memory_parser.add_argument('search', nargs='?', help='Search query')
+    
+    # Config
+    subparsers.add_parser('config', help='Display configuration')
+
+    # WhatsApp (wacli)
+    wa_parser = subparsers.add_parser('whatsapp', help='Manage WhatsApp')
+    wa_subparsers = wa_parser.add_subparsers(dest='subcommand', help='WhatsApp commands')
+    wa_subparsers.add_parser('status', help='Check connection status')
+    wa_subparsers.add_parser('login', help='Login via QR code')
+    
+    wa_send = wa_subparsers.add_parser('send', help='Send text message')
+    wa_send.add_argument('--to', help='Phone number')
+    wa_send.add_argument('--message', help='Message text')
+    
+    wa_hist = wa_subparsers.add_parser('history', help='Get chat history')
+    wa_hist.add_argument('--to', help='Phone number')
+    wa_hist.add_argument('--limit', type=int, default=10, help='Number of messages')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        return 0
+    
+    # Route to appropriate command handler
+    commands = {
+        'version': cmd_version,
+        'status': cmd_status,
+        'chat': cmd_chat,
+        'schedule': cmd_schedule,
+        'deploy': cmd_deploy,
+        'sync': cmd_sync,
+        'calendar': cmd_calendar,
+        'tools': cmd_tools,
+        'memory': cmd_memory,
+        'config': cmd_config,
+        'whatsapp': cmd_whatsapp
+    }
+    
+    handler = commands.get(args.command)
+    if handler:
+        try:
+            return handler(args)
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user")
+            return 130
+        except Exception as e:
+            print_error(f"Unexpected error: {e}")
+            return 1
+    else:
+        print_error(f"Unknown command: {args.command}")
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

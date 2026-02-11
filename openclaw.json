@@ -1,0 +1,59 @@
+{
+    "_comment": "API keys should ONLY be set in .env file, never in this config",
+    "meta": {
+        "lastTouchedVersion": "2026.2.2-3",
+        "lastTouchedAt": "2026-02-05T02:57:49.297Z"
+    },
+    "agents": {
+        "defaults": {
+            "model": {
+                "primary": "meta-llama/llama-3.3-70b-instruct:free",
+                "fallbacks": []
+            },
+            "models": {
+                "google-antigravity/claude-opus-4-5-thinking": {}
+            },
+            "workspace": "/home/ubuntu/.openclaw/workspace",
+            "maxConcurrent": 4,
+            "subagents": {
+                "maxConcurrent": 8
+            }
+        }
+    },
+    "commands": {
+        "native": "auto",
+        "nativeSkills": "auto"
+    },
+    "gateway": {
+        "mode": "local",
+        "auth": {
+            "mode": "token",
+            "token": "2df12734955c019e48e1430385e3b416e04fde7b15d98752"
+        }
+    },
+    "plugins": {
+        "entries": {
+            "whatsapp": {
+                "enabled": true
+            },
+            "discord": {
+                "enabled": true,
+                "admin_user_ids": [
+                    "628939314503614464"
+                ]
+            },
+            "google-antigravity-auth": {
+                "enabled": true
+            }
+        }
+    },
+    "messages": {
+        "ackReactionScope": "group-mentions"
+    },
+    "wizard": {
+        "lastRunAt": "2026-02-05T02:57:49.276Z",
+        "lastRunVersion": "2026.2.2-3",
+        "lastRunCommand": "doctor",
+        "lastRunMode": "local"
+    }
+}
