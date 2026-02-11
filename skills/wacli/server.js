@@ -69,7 +69,7 @@ process.on('unhandledRejection', (reason, p) => {
 
 // --- Message Handling ---
 const axios = require('axios');
-const BRAIN_API_URL = 'http://localhost:8000/api/chat';
+const BRAIN_API_URL = process.env.OPENCLAW_API_URL || 'http://localhost:8001/api/chat';
 
 // Shared logic for processing messages
 async function processMessage(msg) {

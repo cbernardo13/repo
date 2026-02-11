@@ -15,17 +15,16 @@ sleep 2
 
 # Start backend
 cd "$DIR"
-nohup ./start_server.sh > server.log 2>&1 &
+nohup ./scripts/start_server.sh > server.log 2>&1 &
 echo "Backend started."
 
 # Start bot
-# Check if messaging_service exists
-if [ -d "$DIR/messaging_service" ]; then
-    cd "$DIR/messaging_service"
-    nohup node index.js > bot.log 2>&1 &
-    echo "Bot started."
+if [ -d "$DIR/skills/wacli" ]; then
+    cd "$DIR/skills/wacli"
+    nohup node server.js > bot.log 2>&1 &
+    echo "WhatsApp bot started."
 else
-    echo "Warning: messaging_service directory not found."
+    echo "Warning: WhatsApp bot (skills/wacli) directory not found."
 fi
 
 # Start Discord bot

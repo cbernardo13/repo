@@ -144,3 +144,10 @@ echo "  cd messaging_service"
 echo "  node index.js  # Scan QR code"
 echo "  pm2 start index.js --name clawbrain-whatsapp"
 echo ""
+
+# Restart Backend Service
+echo "🚀 Restarting Backend Service..."
+pkill -f llm_brain_api.py || true
+nohup venv/bin/python3 llm_brain_api.py > backend.log 2>&1 &
+echo "✅ Backend started (PID $!)"
+echo "   Logs: tail -f backend.log"

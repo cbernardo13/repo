@@ -34,8 +34,16 @@ except ImportError as e:
     traffic_logger = None
     settings_manager = None
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='web-dashboard/dist', static_url_path='')
 CORS(app)
+
+@app.route('/')
+def serve_index():
+    return app.send_static_file('index.html')
+
+@app.route('/assets/<path:path>')
+def serve_assets(path):
+    return app.send_static_file(f'assets/{path}')
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -54,11 +62,12 @@ def chat():
             
         message = data.get('message', '')
         sender = data.get('sender', 'unknown')
+        channel = data.get('channel', 'web') # Default to web if not specified
         
         if not message:
             return jsonify({"error": "No message provided"}), 400
         
-        logger.info(f"Received message from {sender}: {message[:50]}...")
+        logger.info(f"Received message from {sender} via {channel}: {message[:50]}...")
         
         # Determine complexity based on message content
         # For now, let llm_brain decide internally or default to simple
@@ -66,7 +75,7 @@ def chat():
         
         # Generate response using llm_brain
         # llm_brain.generate_text handles auto-upgrading to AgentLoop if needed
-        response = llm_brain.generate_text(message)
+        response = llm_brain.generate_text(message, channel=channel)
         
         logger.info(f"Generated response for {sender}: {response[:50]}...")
         

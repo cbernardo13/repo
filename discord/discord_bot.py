@@ -18,7 +18,7 @@ env_path = os.path.join(os.path.dirname(__file__), '../.env')
 load_dotenv(env_path)
 
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-OPENCLAW_API_URL = os.getenv("OPENCLAW_API_URL", "http://localhost:8000/api/chat")
+OPENCLAW_API_URL = os.getenv("OPENCLAW_API_URL", "http://localhost:8001/api/chat")
 # Optional: Restrict to specific channels (comma separated)
 ALLOWED_CHANNELS = os.getenv("DISCORD_ALLOWED_CHANNELS", "")
 

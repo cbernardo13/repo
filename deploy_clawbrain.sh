@@ -40,6 +40,7 @@ echo ""
 echo "📦 Syncing files to EC2..."
 rsync -avz -e "ssh -i $KEY_FILE -o StrictHostKeyChecking=no" \
     --exclude 'node_modules/' \
+    --exclude 'web-dashboard/node_modules/' \
     --exclude 'venv/' \
     --exclude '__pycache__/' \
     --exclude '*.pyc' \
@@ -101,18 +102,21 @@ ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no \
     "${EC2_USER}@${EC2_HOST}" \
     "cd ${REMOTE_DIR} && bash remote_clawbrain_setup.sh"
 
+echo ""
+echo "🚀 Restarting Service..."
+ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no \
+    "${EC2_USER}@${EC2_HOST}" \
+    "pkill -f llm_brain_api.py; cd ${REMOTE_DIR} && nohup python3 llm_brain_api.py > server.log 2>&1 &"
+
 if [ $? -eq 0 ]; then
     echo ""
     echo "=============================="
     echo "✅ Deployment Complete!"
     echo "=============================="
     echo ""
-    echo "Next steps:"
-    echo "1. SSH to EC2: ssh -i $KEY_FILE ${EC2_USER}@${EC2_HOST}"
-    echo "2. Test CLI: cd ClawBrain && ./clawbrain version"
-    echo "3. Set up WhatsApp: cd messaging_service && node index.js"
+    echo "Server URL: http://${EC2_HOST}:8001"
     echo ""
 else
-    echo "❌ Remote setup failed"
+    echo "❌ Remote setup/restart failed"
     exit 1
 fi

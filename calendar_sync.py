@@ -30,8 +30,34 @@ def get_calendar_service():
                 raise FileNotFoundError(f"Credentials file not found at {CREDENTIALS_FILE}")
             flow = InstalledAppFlow.from_client_secrets_file(
                 CREDENTIALS_FILE, SCOPES)
-            # Run local server for auth
-            creds = flow.run_local_server(port=0)
+            # Manual flow for remote/headless setup
+            # We use a fixed redirect_uri that matches the console config (usually http://localhost:<port> is allowed for Desktop apps)
+            # We'll use a random port or just http://localhost depending on what works. 
+            # run_local_server uses random ports, suggesting wildcard port matching is enabled.
+            # Match credentials.json exactly
+            flow.redirect_uri = 'http://localhost'
+            
+            auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+            
+            print('-' * 80)
+            print('Please visit this URL to authorize this application:\n')
+            print(auth_url)
+            print('\n' + '-' * 80)
+            print('After giving consent, you will be redirected to a localhost URL (e.g. http://localhost/?code=...)')
+            print('It might fail to load. This is EXPECTED.')
+            print('Please copy the ENTIRE URL from your browser address bar and paste it here.')
+            
+            code = input('Paste the full redirect URL here: ').strip()
+            
+            # Handle if user pastes just the code or the full url
+            # fetch_token(authorization_response=...) handles the URL parsing
+            # If protocol is missing, it might complain, so ensure http is there if it looks like a url
+            
+            # Since https is required by some libs, but localhost is http, we allow http
+            os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+            
+            flow.fetch_token(authorization_response=code)
+            creds = flow.credentials
         # Save the credentials for the next run
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())

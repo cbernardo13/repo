@@ -1,34 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import { fetchTrafficStats, fetchTrafficLogs, fetchSettings, updateSetting } from './api';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Activity, LayoutDashboard, Settings as SettingsIcon, Database, Terminal } from 'lucide-react';
+import { Activity, LayoutDashboard, Settings as SettingsIcon, Database, Terminal, RefreshCcw } from 'lucide-react';
+
+// --- Reusable Refresh Button ---
+const RefreshBtn = ({ onClick, loading }) => (
+  <button
+    onClick={onClick}
+    disabled={loading}
+    style={{
+      display: 'flex', alignItems: 'center', gap: '0.5rem',
+      backgroundColor: 'var(--accent-color)', border: 'none',
+      opacity: loading ? 0.7 : 1, padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', color: '#fff',
+      fontWeight: '500', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+    }}
+  >
+    <RefreshCcw size={16} className={loading ? "animate-spin" : ""} /> Refresh
+  </button>
+);
 
 // --- Dashboard Component ---
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
+  const loadStats = () => {
+    setRefreshing(true);
     fetchTrafficStats().then(data => {
       setStats(data.stats);
       setLoading(false);
-    }).catch(console.error);
+      setRefreshing(false);
+    }).catch(err => {
+      console.error(err);
+      setRefreshing(false);
+    });
+  };
+
+  useEffect(() => {
+    loadStats();
 
     // Auto-refresh every 10s
-    const interval = setInterval(() => {
-      fetchTrafficStats().then(data => setStats(data.stats)).catch(console.error);
-    }, 10000);
+    const interval = setInterval(loadStats, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <div className="p-8 text-center">Loading dashboard...</div>;
+  if (loading && !stats) return <div className="p-8 text-center">Loading dashboard...</div>;
   if (!stats) return <div className="p-8 text-center text-red-400">Failed to load stats. Check backend.</div>;
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl mb-6">Overview</h2>
+      <div className="flex justify-between items-center mb-6" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <h2 className="text-2xl" style={{ margin: 0 }}>Overview</h2>
+        <RefreshBtn onClick={loadStats} loading={refreshing} />
+      </div>
 
       {/* Key Metrics */}
       <div className="stats-grid">
@@ -112,7 +139,7 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
@@ -120,15 +147,20 @@ const Dashboard = () => {
 const Logs = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(0);
   const LIMIT = 20;
 
   useEffect(() => {
     const loadLogs = () => {
-      setLoading(true);
+      setRefreshing(true);
       fetchTrafficLogs(LIMIT, page * LIMIT).then(data => {
         setLogs(data.logs);
         setLoading(false);
+        setRefreshing(false);
+      }).catch(err => {
+        console.error(err);
+        setRefreshing(false);
       });
     };
 
@@ -137,14 +169,28 @@ const Logs = () => {
     return () => clearInterval(interval);
   }, [page]);
 
+  const handleManualRefresh = () => {
+    setRefreshing(true);
+    fetchTrafficLogs(LIMIT, page * LIMIT).then(data => {
+      setLogs(data.logs);
+      setRefreshing(false);
+    }).catch(err => {
+      console.error(err);
+      setRefreshing(false);
+    });
+  };
+
   return (
     <div className="animate-fade-in glass-panel p-6">
       <div className="flex justify-between items-center mb-4" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <h2 className="text-xl">Traffic Logs</h2>
-        <div>
-          <button disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{ marginRight: '0.5rem', opacity: page === 0 ? 0.5 : 1 }}>Prev</button>
-          <span style={{ margin: '0 1rem' }}>Page {page + 1}</span>
-          <button onClick={() => setPage(p => p + 1)}>Next</button>
+        <h2 className="text-2xl">Traffic Logs</h2>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <RefreshBtn onClick={handleManualRefresh} loading={refreshing} />
+          <div>
+            <button disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{ marginRight: '0.5rem', opacity: page === 0 ? 0.5 : 1 }}>Prev</button>
+            <span style={{ margin: '0 1rem' }}>Page {page + 1}</span>
+            <button onClick={() => setPage(p => p + 1)}>Next</button>
+          </div>
         </div>
       </div>
 
@@ -189,13 +235,23 @@ const Logs = () => {
 const Settings = () => {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [updates, setUpdates] = useState({}); // Tracking changes
 
-  useEffect(() => {
+  const loadKeys = () => {
+    setRefreshing(true);
     fetchSettings().then(data => {
       setKeys(data.keys);
       setLoading(false);
+      setRefreshing(false);
+    }).catch(err => {
+      console.error(err);
+      setRefreshing(false);
     });
+  };
+
+  useEffect(() => {
+    loadKeys();
   }, []);
 
   const handleChange = (name, val) => {
@@ -223,7 +279,10 @@ const Settings = () => {
 
   return (
     <div className="animate-fade-in glass-panel p-6" style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <h2 className="text-xl mb-6">API Configuration</h2>
+      <div className="flex justify-between items-center mb-6" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <h2 className="text-xl" style={{ margin: 0 }}>API Configuration</h2>
+        <RefreshBtn onClick={loadKeys} loading={refreshing} />
+      </div>
       <div className="space-y-4" style={{ display: 'grid', gap: '1.5rem' }}>
         {keys.map(k => (
           <div key={k.name}>
@@ -252,6 +311,10 @@ const Settings = () => {
 
 // --- Main App ---
 function App() {
+  useEffect(() => {
+    console.log("ClawBrain Dashboard Loaded - V2 (Refresh Buttons Added)");
+  }, []);
+
   const [activeTab, setActiveTab] = useState('dashboard');
 
   return (

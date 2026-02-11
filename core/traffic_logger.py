@@ -30,15 +30,25 @@ class TrafficLogger:
                         status TEXT,
                         tokens_in INTEGER DEFAULT 0,
                         tokens_out INTEGER DEFAULT 0,
-                        cost REAL DEFAULT 0.0
+                        cost REAL DEFAULT 0.0,
+                        channel TEXT DEFAULT 'unknown'
                     )
                 ''')
+                
+                # Simple migration check: see if 'channel' column exists
+                try:
+                    cursor.execute('SELECT channel FROM traffic LIMIT 1')
+                except sqlite3.OperationalError:
+                    # Column likely missing, add it
+                    logger.info("Migrating traffic table: adding 'channel' column")
+                    cursor.execute('ALTER TABLE traffic ADD COLUMN channel TEXT DEFAULT "unknown"')
+                    
                 conn.commit()
                 conn.close()
         except Exception as e:
             logger.error(f"Failed to initialize traffic database: {e}")
 
-    def log_traffic(self, prompt, response, provider, model, latency, status="success", tokens_in=0, tokens_out=0, cost=0.0):
+    def log_traffic(self, prompt, response, provider, model, latency, status="success", tokens_in=0, tokens_out=0, cost=0.0, channel="unknown"):
         """Logs a traffic event to the database."""
         try:
             timestamp = datetime.now().isoformat()
@@ -46,9 +56,9 @@ class TrafficLogger:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO traffic (timestamp, prompt, response, provider, model, latency, status, tokens_in, tokens_out, cost)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (timestamp, prompt, response, provider, model, latency, status, tokens_in, tokens_out, cost))
+                    INSERT INTO traffic (timestamp, prompt, response, provider, model, latency, status, tokens_in, tokens_out, cost, channel)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (timestamp, prompt, response, provider, model, latency, status, tokens_in, tokens_out, cost, channel))
                 conn.commit()
                 conn.close()
         except Exception as e:

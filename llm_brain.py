@@ -23,13 +23,16 @@ except ImportError:
 class Complexity(Enum):
     SIMPLE = "simple"
     COMPLEX = "complex"
+    HEARTBEAT = "heartbeat"
 
 # --- Cost Rates (approximate per 1M tokens) ---
 # Format: model_name_fragment: (input_rate, output_rate)
 COST_RATES = {
     "gemini-2.0-flash": (0.10, 0.40),
+    "gemini-3-pro": (1.25, 5.00),
     "claude-3-opus": (15.0, 75.0),
     "claude-3-sonnet": (3.0, 15.0),
+    "claude-opus-4.6": (15.0, 75.0),
     "free": (0.0, 0.0), # OpenRouter free
     "llama": (0.7, 0.9), # General fallback for paid open models
     "default": (1.0, 3.0)
@@ -67,11 +70,70 @@ def get_api_key(name):
     return key
 
 
-def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None):
+# --- Context Loading ---
+
+def load_brain_context():
+    """Reads and combines the brain markdown files."""
+    brain_dir = os.path.join(os.path.dirname(__file__), "brain")
+    
+    # Priority order for context
+    # SOUL -> USER -> IDENTITY -> AGENTS -> daily_schedule -> memory
+    files_to_read = [
+        "SOUL.md",
+        "USER.md",
+        "IDENTITY.md",
+        "AGENTS.md",
+        "daily_schedule.md"
+    ]
+    
+    context_parts = []
+    
+    for filename in files_to_read:
+        filepath = os.path.join(brain_dir, filename)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        context_parts.append(f"\n\n--- {filename} ---\n{content}")
+            except Exception as e:
+                logger.error(f"Failed to read brain file {filename}: {e}")
+
+    # Load today's memory if available
+    import datetime
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    memory_file = os.path.join(brain_dir, "memory", f"{today_str}.md")
+    
+    if os.path.exists(memory_file):
+         try:
+            with open(memory_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content:
+                    context_parts.append(f"\n\n--- memory/{today_str}.md ---\n{content}")
+         except Exception as e:
+            logger.error(f"Failed to read daily memory: {e}")
+            
+    return "\n".join(context_parts)
+
+def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None, channel="unknown"):
     gemini_key = get_api_key("GEMINI_API_KEY")
     claude_key = get_api_key("ANTHROPIC_API_KEY")
     openrouter_key = get_api_key("OPENROUTER_API_KEY")
 
+    # --- Load & Inject Brain Context ---
+    brain_context = load_brain_context()
+    
+    # If a specific system instruction is provided (e.g. by a tool like generate_schedule), 
+    # we append the brain context to it (or prepend, depending on importance).
+    # Generally, the Persona (Brain) should be the base, and specific instructions add to it.
+    
+    final_system_instruction = brain_context
+    if system_instruction:
+        final_system_instruction = f"{brain_context}\n\n--- TASK INSTRUCTION ---\n{system_instruction}"
+        
+    # Override the local variable to be used in calls
+    # We will pass final_system_instruction instead of system_instruction to the providers
+    
     # --- Tool Routing (Auto-Upgrade to AgentLoop) ---
     # If the user asks about calendar, schedule, or files, try to use the AgentLoop automatically.
     # This ensures "dumb" callers (like the legacy WhatsApp bot) get "smart" behavior.
@@ -80,6 +142,15 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None)
     tool_keywords = ["calendar", "schedule", "appointment", "busy", "free", "project", "file"]
     should_use_agent = any(keyword in prompt.lower() for keyword in tool_keywords)
     
+    # NOTE: AgentLoop internally uses memory/tools which is "Agentic". 
+    # The brain files we just loaded are "Persona/Context". 
+    # We should ideally pass this brain context to the AgentLoop too, 
+    # but AgentLoop constructs its own system prompt. 
+    # For now, we will leave AgentLoop as is, or we would need to modify AgentLoop to accept extra context.
+    # Given the implementation of AgentLoop below, it constructs a prompt. 
+    # Let's Modify AgentLoop later if needed to respect this context. 
+    # For now, let's focus on non-agent text generation (the bulk of chat).
+
     if should_use_agent and CORE_AVAILABLE and not system_instruction: 
          # Only hijack if no specific system instruction (to avoid breaking specific workflows like generate_schedule)
          try:
@@ -112,16 +183,25 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None)
     gemini_paid_config = {"model": "gemini-2.0-flash"}
     claude_paid_config = {"model": "claude-3-opus-20240229"}
 
+    # Premium Models (for complex tasks)
+    gemini_3_pro_config = {"model": "gemini-3-pro"}
+    claude_opus_46_config = {"model": "claude-opus-4.6"}
 
-    if complexity == Complexity.SIMPLE:
+
+    if complexity == Complexity.HEARTBEAT:
+        # Strategy: Cheapest only — minimize cost
+        providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
+
+    elif complexity == Complexity.SIMPLE:
         # Strategy: Free -> Cheap Paid -> Expensive Paid
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
         providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_paid_config))
         providers.append(("claude", claude_key, ANTHROPIC_LIB_AVAILABLE, claude_paid_config))
         
     else: # COMPLEX
-        # Strategy: Smartest Paid -> Smart Paid -> Free fallback
-        providers.append(("claude", claude_key, ANTHROPIC_LIB_AVAILABLE, claude_paid_config))
+        # Strategy: Premium -> Standard Paid -> Free fallback
+        providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_3_pro_config))
+        providers.append(("claude", claude_key, ANTHROPIC_LIB_AVAILABLE, claude_opus_46_config))
         providers.append(("gemini", gemini_key, GEMINI_LIB_AVAILABLE, gemini_paid_config))
         providers.append(("openrouter", openrouter_key, REQUESTS_LIB_AVAILABLE, openrouter_free_config))
 
@@ -144,11 +224,11 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None)
             usage = {}
             
             if name == "gemini":
-                content, usage = _call_gemini(key, prompt, system_instruction, config)
+                content, usage = _call_gemini(key, prompt, final_system_instruction, config)
             elif name == "claude":
-                content, usage = _call_claude(key, prompt, system_instruction, config)
+                content, usage = _call_claude(key, prompt, final_system_instruction, config)
             elif name == "openrouter":
-                content, usage = _call_openrouter(key, prompt, system_instruction, config)
+                content, usage = _call_openrouter(key, prompt, final_system_instruction, config)
             
             end_time = time.time()
             latency = end_time - start_time
@@ -181,7 +261,8 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None)
                         status="success",
                         tokens_in=t_in,
                         tokens_out=t_out,
-                        cost=cost
+                        cost=cost,
+                        channel=channel or "unknown"
                     )
                 except Exception as log_err:
                     logger.error(f"Traffic logging failed (non-blocking): {log_err}")
@@ -198,7 +279,8 @@ def generate_text(prompt, complexity=Complexity.SIMPLE, system_instruction=None)
                     model=config.get("model", "unknown"),
                     latency=0,
                     status=f"error: {str(e)}",
-                    cost=0
+                    cost=0,
+                    channel=channel or "unknown"
                 )
 
             logger.error(f"{name} failed: {e}")
