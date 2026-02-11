@@ -1,43 +1,27 @@
-# Sensitive Information
-.env
-*.env
-credentials.json
-token.json
-*.pem
-*.key
-client_secret.json
-
 # Dependencies
 node_modules/
 venv/
-env/
 __pycache__/
-*.pyc
 
-# IDEs and OS
-.DS_Store
-.vscode/
-.idea/
+# Environment & Secrets
+.env
+*.pem
+credentials.json
+token.json
+new_openclaw_key.pem
 
-# Logs and databases
-*.log
-*.sqlite
-*.db
-
-# Temporary and Build Files
-dist/
-build/
-*.egg-info/
-
-# WhatsApp Bot Session
+# WhatsApp Session
 .wwebjs_auth/
 .wwebjs_cache/
+skills/wacli/.wwebjs_auth/
+skills/wacli/.wwebjs_cache/
 qr.png
-session/
 
-# ClawBrain Specific
-manual*.log
-temp/
-tmp/
-openclaw_cli_profile.json
-ec2_info.json
+# Database & Logs
+*.db
+*.log
+*.sqlite
+traffic.db
+
+# OS
+.DS_Store
